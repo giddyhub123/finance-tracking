@@ -114,7 +114,7 @@ html,body{height:100%;background:var(--bg2);font-family:-apple-system,BlinkMacSy
 <script>
 // ── PASSWORD GATE ────────────────────────────────────────────────────────────
 (function(){
-  const PW='hello123'; // ← replace with your password
+  const PW='Hello123'; // ← replace with your password
   if(sessionStorage.getItem('ft_auth')!==PW){
     const entered=prompt('Password:');
     if(entered!==PW){document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#6b6b68">Access denied.</div>';throw new Error();}
@@ -288,7 +288,7 @@ const CM=now.getMonth(),CY=now.getFullYear();
 let S={
   tab:'dashboard',expenses:[],income:[],
   budgets:Object.fromEntries(CATS.map(c=>[c.id,c.budget])),
-  selM:CM,charts:{},
+  selM:CM,selY:CY,charts:{},
   form:{name:'',amount:'',currency:'USD',category:'eating_out',date:now.toISOString().split('T')[0],note:''},
   iForm:{name:'',amount:'',currency:'USD',category:'salary',date:now.toISOString().split('T')[0],note:''},
 };
@@ -414,6 +414,8 @@ function saveEditInc(id){
 }
 
 function updB(id,v){S.budgets[id]=parseFloat(v)||0;saveB();renderBB();}
+function prevMo(){if(S.selM===0){S.selM=11;S.selY--;}else{S.selM--;}render();}
+function nextMo(){if(S.selM===CM&&S.selY===CY)return;if(S.selM===11){S.selM=0;S.selY++;}else{S.selM++;}render();}
 function go(t){S.tab=t;document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));document.getElementById('tab-'+t).classList.add('active');render();}
 function killCharts(){Object.values(S.charts).forEach(c=>{try{c.destroy();}catch(x){}});S.charts={};}
 
@@ -427,7 +429,7 @@ function currSelHtml(id,def='USD'){return`<select id="${id}" onchange="convHint(
 function render(){
   killCharts();
   const T={dashboard:'Dashboard',log:'Expenses',income:'Income',budget:'Budget',insights:'Insights'};
-  const U={dashboard:MNS[CM]+' '+CY,log:'Log & manage',income:'Log & review',budget:'Monthly targets · USD',insights:'Patterns & advice'};
+  const U={dashboard:MNS[S.selM]+' '+S.selY,log:'Log & manage',income:'Log & review',budget:'Monthly targets · USD',insights:'Patterns & advice'};
   document.getElementById('pt').textContent=T[S.tab];
   document.getElementById('ps').textContent=U[S.tab];
   const c=document.getElementById('content');
@@ -440,24 +442,31 @@ function render(){
 
 // ── DASHBOARD ────────────────────────────────────────────────────────────────
 function buildDB(){
-  const ce=mexp(CM),ci=minc(CM);
+  const ce=mexp(S.selM,S.selY),ci=minc(S.selM,S.selY);
   const sp=ce.filter(e=>!INV_IDS.has(e.category)&&e.category!=='savings').reduce((s,e)=>s+e.amount,0);
   const sv=ce.filter(e=>e.category==='savings').reduce((s,e)=>s+e.amount,0);
   const inv=ce.filter(e=>INV_IDS.has(e.category)).reduce((s,e)=>s+e.amount,0);
   const inc=ci.reduce((s,e)=>s+e.amount,0);
   const net=inc-sp-sv-inv;
   const bud=SPEND_CATS.filter(c=>c.id!=='savings').reduce((s,c)=>s+(S.budgets[c.id]||c.budget),0);
-  const recent=[...S.expenses].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5);
+  const monthTxns=[...ce].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const isNow=S.selM===CM&&S.selY===CY;
 
   const invTotals=INV_CATS.map(c=>({...c,total:S.expenses.filter(e=>e.category===c.id).reduce((s,e)=>s+e.amount,0)}));
   const totalInvAll=invTotals.reduce((s,c)=>s+c.total,0);
   const hasInv=invTotals.some(c=>c.total>0);
 
   return`
+  <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border-radius:var(--rsm);padding:8px 12px;margin-bottom:12px">
+    <button onclick="prevMo()" style="background:none;border:none;font-size:24px;color:var(--text2);cursor:pointer;padding:0 10px;line-height:1">‹</button>
+    <span style="font-size:15px;font-weight:600">${MNS[S.selM]} ${S.selY}${isNow?` <span style="font-size:11px;font-weight:400;color:var(--brand)">· current</span>`:''}</span>
+    <button onclick="nextMo()" style="background:none;border:none;font-size:24px;cursor:pointer;padding:0 10px;line-height:1;color:${isNow?'var(--bg3)':'var(--text2)'}" ${isNow?'disabled':''}>›</button>
+  </div>
+
   <div class="mg3">
-    <div class="m"><div class="lbl">Income</div><div class="val ok">${fmts(inc)}</div><div class="msub">${MNS[CM]}</div></div>
+    <div class="m"><div class="lbl">Income</div><div class="val ok">${inc>0?fmts(inc):'—'}</div><div class="msub">${inc>0?ci.length+' entries':'not logged'}</div></div>
     <div class="m"><div class="lbl">Spent</div><div class="val ${sp>bud?'err':''}">${fmts(sp)}</div><div class="msub">of ${fmts(bud)}</div></div>
-    <div class="m"><div class="lbl">Net</div><div class="val ${net<0?'err':'ok'}">${net>=0?'+':''}${fmts(net)}</div><div class="msub">this month</div></div>
+    <div class="m"><div class="lbl">Net</div><div class="val ${net<0?'err':inc>0?'ok':''}">${inc>0?(net>=0?'+':'')+fmts(net):'—'}</div><div class="msub">income − spent</div></div>
   </div>
 
   <div class="card">
@@ -465,31 +474,31 @@ function buildDB(){
       <span>Portfolio · all time</span>
       <span style="font-size:14px;font-weight:700;color:var(--ok)">${fmt(totalInvAll)}</span>
     </div>
-    ${hasInv?invTotals.filter(c=>c.total>0).map(c=>`
-    <div class="inv-row">
-      <div style="display:flex;align-items:center"><span class="inv-dot" style="background:${c.color}"></span><span class="inv-label">${c.label}</span></div>
-      <span class="inv-amt">${fmt(c.total)}</span>
-    </div>`).join('')
-    :`<div style="font-size:13px;color:var(--text2);padding:6px 0">No investment entries yet. Log them via <strong>Expense → Investment</strong> categories.</div>`}
-    ${inv>0?`<div style="margin-top:10px;padding-top:10px;border-top:.5px solid var(--border);font-size:12px;color:var(--text2)">Invested this month: <strong>${fmt(inv)}</strong></div>`:''}
+    ${hasInv?invTotals.filter(c=>c.total>0).map(c=>{
+      const moAmt=ce.filter(e=>e.category===c.id).reduce((s,e)=>s+e.amount,0);
+      return`<div class="inv-row">
+        <div style="display:flex;align-items:center"><span class="inv-dot" style="background:${c.color}"></span><span class="inv-label">${c.label}</span></div>
+        <div style="text-align:right">
+          <span class="inv-amt">${fmt(c.total)}</span>
+          ${moAmt>0?`<span style="font-size:10px;color:var(--brand);display:block">+${fmt(moAmt)} ${MNS[S.selM]}</span>`:''}
+        </div>
+      </div>`;}).join('')
+    :`<div style="font-size:13px;color:var(--text2);padding:6px 0">No investments yet. Log via <strong>Expense → Investment</strong>.</div>`}
+    ${inv>0?`<div style="margin-top:10px;padding-top:10px;border-top:.5px solid var(--border);font-size:12px;color:var(--text2)">${MNS[S.selM]} invested: <strong style="color:var(--ok)">${fmt(inv)}</strong></div>`:''}
   </div>
 
   <div class="card">
-    <div class="card-title">Monthly spending — ${CY}</div>
+    <div class="card-title">Spending — ${S.selY}</div>
     <div class="cw"><canvas id="barChart"></canvas></div>
   </div>
   <div class="card">
-    <div class="card-title">By category —
-      <select onchange="S.selM=parseInt(this.value);render()" style="border:none;background:transparent;color:var(--text2);font-size:13px;cursor:pointer">
-        ${MNS.map((m,i)=>`<option value="${i}"${i===S.selM?' selected':''}>${m}</option>`).join('')}
-      </select>
-    </div>
+    <div class="card-title">By category — ${MNS[S.selM]}</div>
     <div class="cw"><canvas id="donutChart"></canvas></div>
     <div class="leg" id="dleg"></div>
   </div>
   <div class="card">
-    <div class="card-title">Recent expenses</div>
-    ${recent.length?recent.map(e=>`
+    <div class="card-title">${MNS[S.selM]} transactions (${monthTxns.length})</div>
+    ${monthTxns.length?monthTxns.map(e=>`
     <div class="er">
       <div class="cd" style="background:${cat(e.category).color}"></div>
       <div class="ei">
@@ -497,19 +506,19 @@ function buildDB(){
         <div class="em">${cat(e.category).label} · ${dateStr(e.date)}</div>
       </div>
       <div>${e.amount?`<div class="ea">${fmt(e.amount)}</div>`:''} ${origTag(e)}</div>
-    </div>`).join(''):'<div class="empty"><i class="ti ti-receipt-off"></i>No transactions yet</div>'}
+    </div>`).join(''):'<div class="empty"><i class="ti ti-receipt-off"></i>No transactions this month</div>'}
   </div>`;
 }
 
 function initC(){
   const bx=document.getElementById('barChart');
   if(bx){
-    const d=MNS.map((_,i)=>mexp(i).filter(e=>!INV_IDS.has(e.category)&&e.category!=='savings').reduce((s,e)=>s+e.amount,0));
-    S.charts.bar=new Chart(bx,{type:'bar',data:{labels:MNS,datasets:[{data:d,backgroundColor:MNS.map((_,i)=>i===CM?'#EB592A':'rgba(235,89,42,.22)'),borderRadius:4,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmt(c.parsed.y)}}},scales:{x:{grid:{display:false},ticks:{font:{size:10},color:'#888'},border:{display:false}},y:{grid:{color:'rgba(128,128,128,.1)'},ticks:{callback:v=>fmts(v),font:{size:10},color:'#888'},border:{display:false}}}}});
+    const d=MNS.map((_,i)=>mexp(i,S.selY).filter(e=>!INV_IDS.has(e.category)&&e.category!=='savings').reduce((s,e)=>s+e.amount,0));
+    S.charts.bar=new Chart(bx,{type:'bar',data:{labels:MNS,datasets:[{data:d,backgroundColor:MNS.map((_,i)=>i===S.selM?'#EB592A':'rgba(235,89,42,.22)'),borderRadius:4,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmt(c.parsed.y)}}},scales:{x:{grid:{display:false},ticks:{font:{size:10},color:'#888'},border:{display:false}},y:{grid:{color:'rgba(128,128,128,.1)'},ticks:{callback:v=>fmts(v),font:{size:10},color:'#888'},border:{display:false}}}}});
   }
   const dx=document.getElementById('donutChart');
   if(dx){
-    const ex=mexp(S.selM).filter(e=>!INV_IDS.has(e.category)&&e.category!=='savings');
+    const ex=mexp(S.selM,S.selY).filter(e=>!INV_IDS.has(e.category)&&e.category!=='savings');
     const tots={};ex.forEach(e=>{tots[e.category]=(tots[e.category]||0)+e.amount;});
     const ents=Object.entries(tots).sort((a,b)=>b[1]-a[1]);
     if(!ents.length){dx.parentElement.innerHTML='<div class="empty"><i class="ti ti-chart-pie-off"></i>No expenses this month</div>';}
